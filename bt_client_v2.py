@@ -77,7 +77,6 @@ def receive_data(queue: Queue):
         logger.info(f"{data} {val} {(val / 4096.0 * VREF):.3f}");
 
     async def main():
-        loop = asyncio.get_running_loop()
         server = await discover_server()
         if server:
             logger.info("found %s", server.name)
