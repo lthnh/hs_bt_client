@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import csv
+from datetime import datetime
 import time
 import threading
 from queue import Queue, Empty
@@ -118,29 +120,43 @@ def receive_data(queue: Queue, stop_event: threading.Event):
     asyncio.run(main())
 
 def update_plot(queue: Queue, stop_event: threading.Event):
+
     start_time = time.perf_counter()
     time_data = deque(maxlen=MAX_DATA_LEN)
     hs_data = deque(maxlen=MAX_DATA_LEN)
     bp_data = deque(maxlen=MAX_DATA_LEN)
+
+    file_date = f'{datetime.now().strftime('%d_%m_%Y_%H_%M')}'
+    hs_file = open(f'{file_date}_{BIOSIG.HS.name}.csv', 'w', newline='')
+    bp_file = open(f'{file_date}_{BIOSIG.BP.name}.csv', 'w', newline='')
+    hs_log_writer = csv.writer(hs_file, dialect='excel')
+    bp_log_writer = csv.writer(bp_file, dialect='excel')
     while not stop_event.is_set():
         try:
             sig_type, val = queue.get_nowait()
             # logger.info(f'get {val}')
         except Empty:
             continue
-        time_data.append(time.perf_counter() - start_time)
-        hs_data.append(val)
+        delta_t = time.perf_counter() - start_time
+        time_data.append(delta_t)
         data_x = list(time_data)
         if sig_type == BIOSIG.HS:
+            hs_data.append(val)
             hs_data_y = [x / 4096.0 * VREF for x in list(hs_data)]
             dpg.configure_item('heart_sound', x=data_x, y=hs_data_y)
+            hs_log_writer.writerow([delta_t, val])
         if sig_type == BIOSIG.BP:
+            bp_data.append(val)
             bp_data_y = [x / 4096.0 * VREF for x in list(bp_data)]
-            dpg.configure_item('blood_pressure', x=data_x, y=hs_data_y)
+            dpg.configure_item('blood_pressure', x=data_x, y=bp_data_y)
+            bp_log_writer.writerow([delta_t, val])
         # logger.info('set value successfully')
         if dpg.get_value('auto_fit_checkbox'):
             dpg.fit_axis_data('x_axis')
             # dpg.set_axis_limits_auto('y_axis')
+    else:
+        hs_file.close()
+        bp_file.close()
 
 queue = Queue()
 stop_event = threading.Event()
@@ -167,10 +183,10 @@ dpg.setup_dearpygui()
 dpg.show_viewport()
 dpg.set_primary_window('primary_window', True)
 
-recv_data_handler = threading.Thread(target=receive_data, args=(queue, stop_event), daemon=True)
+recv_data_handler = threading.Thread(target=receive_data, args=(queue, stop_event))
 recv_data_handler.start()
 
-update_plot_handler = threading.Thread(target=update_plot, args=(queue,stop_event), daemon=True)
+update_plot_handler = threading.Thread(target=update_plot, args=(queue,stop_event))
 update_plot_handler.start()
 
 dpg.start_dearpygui()
