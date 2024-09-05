@@ -70,21 +70,15 @@ def receive_data(queue: Queue, stop_event: threading.Event):
                     except Exception as e:
                         logger.error("    [Descriptor] %s, Error: %s", descriptor, e)
 
-    async def find_hs_service(client: BleakClient) -> Union[BleakGATTCharacteristic, None]:
+    async def find_services(client: BleakClient) -> Union[BleakGATTCharacteristic, None]:
         hs_char = None
         for service in client.services:
             for char in service.characteristics:
                 if char.uuid == HS_CHAR_UUID:
                     hs_char = char
-        return hs_char
-
-    async def find_bp_service(client: BleakClient) -> Union[BleakGATTCharacteristic, None]:
-        bp_char = None
-        for service in client.services:
-            for char in service.characteristics:
                 if char.uuid == BP_CHAR_UUID:
                     bp_char = char
-        return bp_char
+        return (hs_char, bp_char)
 
     async def notification_callback(char: BleakGATTCharacteristic, data: bytearray):
         val = int.from_bytes(bytes=data, byteorder='little', signed=False)
@@ -108,8 +102,7 @@ def receive_data(queue: Queue, stop_event: threading.Event):
             logger.info("connected to %s", server.name)
             logger.info("begin to extract all of its services")
             await extract_all_services(client)
-            hs_char = await find_hs_service(client)
-            bp_char = await find_bp_service(client)
+            hs_char, bp_char = await find_services(client)
             await client.start_notify(hs_char, notification_callback)
             await client.start_notify(bp_char, notification_callback)
             while not stop_event.is_set():
@@ -126,30 +119,28 @@ def update_plot(queue: Queue, stop_event: threading.Event):
     hs_data = deque(maxlen=MAX_DATA_LEN)
     bp_data = deque(maxlen=MAX_DATA_LEN)
 
-    file_date = f'{datetime.now().strftime('%d_%m_%Y_%H_%M')}'
-    hs_file = open(f'{file_date}_{BIOSIG.HS.name}.csv', 'w', newline='')
-    bp_file = open(f'{file_date}_{BIOSIG.BP.name}.csv', 'w', newline='')
-    hs_log_writer = csv.writer(hs_file, dialect='excel')
-    bp_log_writer = csv.writer(bp_file, dialect='excel')
+    # file_date = f'{datetime.now().strftime('%d_%m_%Y_%H_%M')}'
+    # hs_file = open(f'{file_date}_{BIOSIG.HS.name}.csv', 'w', newline='')
+    # bp_file = open(f'{file_date}_{BIOSIG.BP.name}.csv', 'w', newline='')
+    # hs_log_writer = csv.writer(hs_file, dialect='excel')
+    # bp_log_writer = csv.writer(bp_file, dialect='excel')
     while not stop_event.is_set():
         try:
             sig_type, val = queue.get_nowait()
             # logger.info(f'get {val}')
         except Empty:
             continue
+        val /= (4096.0 * VREF)
         delta_t = time.perf_counter() - start_time
         time_data.append(delta_t)
-        data_x = list(time_data)
         if sig_type == BIOSIG.HS:
             hs_data.append(val)
-            hs_data_y = [x / 4096.0 * VREF for x in list(hs_data)]
-            dpg.configure_item('heart_sound', x=data_x, y=hs_data_y)
-            hs_log_writer.writerow([delta_t, val])
+            dpg.configure_item('heart_sound', x=list(time_data), y=list(hs_data))
+            # hs_log_writer.writerow([delta_t, val])
         if sig_type == BIOSIG.BP:
             bp_data.append(val)
-            bp_data_y = [x / 4096.0 * VREF for x in list(bp_data)]
-            dpg.configure_item('blood_pressure', x=data_x, y=bp_data_y)
-            bp_log_writer.writerow([delta_t, val])
+            dpg.configure_item('blood_pressure', x=list(time_data), y=list(bp_data))
+            # bp_log_writer.writerow([delta_t, val])
         # logger.info('set value successfully')
         if dpg.get_value('auto_fit_checkbox'):
             dpg.fit_axis_data('x_axis')

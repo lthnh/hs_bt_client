@@ -3,8 +3,6 @@ from datetime import datetime
 import time
 import csv
 import logging
-import signal
-from contextlib import suppress
 from enum import Enum
 
 from bleak import BleakScanner, BleakClient, BleakGATTCharacteristic
@@ -35,9 +33,9 @@ async def notification_callback(char: BleakGATTCharacteristic, data: bytearray):
     sig_type = BIOSIG.HS if char == hs_char else BIOSIG.BP
     print(f"{sig_type.name} {data} {val} {(val / 4096.0 * VREF):.3f}");
     if char == hs_char:
-        hs_log_writer.writerow([time.perf_counter() - start_time, val])
+        hs_log_writer.writerow([time.perf_counter() - start_time, val, val / 4096.0 * VREF])
     if char == bp_char:
-        hs_log_writer.writerow([time.perf_counter() - start_time, val])
+        bp_log_writer.writerow([time.perf_counter() - start_time, val, val / 4096.0 * VREF])
 
 async def main():
     global start_time, hs_char, bp_char
@@ -94,7 +92,7 @@ async def main():
         start_time = time.perf_counter()
         await client.start_notify(hs_char, notification_callback)
         await client.start_notify(bp_char, notification_callback)
-        while True:
+        while time.perf_counter() - start_time < 5:
             if not client.is_connected:
                 break
             await asyncio.sleep(1)
